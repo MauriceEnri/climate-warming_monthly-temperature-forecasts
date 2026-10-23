@@ -223,6 +223,27 @@ def download_gfs(
     Path
         Normalized NetCDF file.
     """
+    #ensure an already existing member is not downloaded again 
+    #in case the the downloader crashes at some later stage and 
+    #is restarted
+    member_dir = NORMALIZED_DIR / "GFS" / member
+
+    member_dir.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+    outfile = (
+        member_dir
+        /
+        f"{member}_{run_date:%Y%m%d}_{run_hour}Z.nc"
+    )
+    if outfile.exists():
+        print(
+            f"[SKIP] GFS {member}: "
+            f"{outfile} already exists"
+        )
+        return outfile
+
     # temporary storage for GRIB files
     forecast_dir = (
         FORECAST_DIR
@@ -241,6 +262,10 @@ def download_gfs(
     # ---------------------------------------------------------------
     # Download all forecast hours
     # ---------------------------------------------------------------
+    if run_hour == "00":
+        max_fhr = 378
+    if run_hour == "12":
+        max_fhr = 384
     for fhr in range(0, max_fhr + 1, 6):
         url = build_url(
             run_date,

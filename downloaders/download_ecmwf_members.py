@@ -12,6 +12,24 @@ def download_ecmwf_member(
     date,
     run
 ):
+    normalised_dir = (
+        NORMALIZED_DIR
+        /
+        system
+        /
+        member
+    )
+    normalised_file = (
+        normalised_dir
+        /
+        f"{member}_{date}_{run}Z.nc"
+    )
+    if normalised_file.exists():
+        print(
+            f"[SKIP] {system} {member}: "
+            f"{normalised_file} already exists"
+        )
+        return normalised_file
     # ---------------------------------------------------------
     # Create output folder
     # ---------------------------------------------------------
@@ -35,18 +53,24 @@ def download_ecmwf_member(
     if system == "IFS":
         client = Client(
             source="ecmwf",
-            model="ifs"
+            model="ifs",
+            retry_after=30,              
+            use_server_retry_after=False,
         )
     elif system == "AIFS":
         if member == "AIFS":
             client = Client(
                 source="ecmwf",
-                model="aifs-single"
+                model="aifs-single",
+                retry_after=30,              
+                use_server_retry_after=False,
             )
         else:
             client = Client(
                 source="ecmwf",
-                model="aifs-ens"
+                model="aifs-ens",
+                retry_after=30,              
+                use_server_retry_after=False,
             )
     else:
         raise ValueError(f"Unknown system: {system}")
@@ -54,9 +78,15 @@ def download_ecmwf_member(
     # Build request
     # ---------------------------------------------------------
     if system == "IFS":
-        max_step = 240
+        if run == "00":
+            max_step = 354
+        else:
+            max_step = 360
     elif system == "AIFS":
-        max_step = 360
+        if run == "00":
+            max_step = 354
+        else:
+            max_step = 360
     else:
         raise ValueError(f"Unknown system: {system}")
     if member in ("HRES", "AIFS"):
@@ -131,8 +161,14 @@ def download_ecmwf_member(
         normalised_file
     )
     ds.close()
+    #delete grib files once no longer needed
+    try:
+        outfile.unlink()
+        print(f"[OK] Deleted {outfile}")
+    except Exception as e:
+        print(f"Could not delete {outfile}: {e}")
     print(
-        "[OK] Saved",
+        "\n[OK] Saved",
         normalised_file
     )
     return normalised_file
