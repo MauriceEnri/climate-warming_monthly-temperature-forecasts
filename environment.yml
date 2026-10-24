@@ -1,0 +1,20 @@
+name: germany-forecast
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.11,<3.13
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib
+  - xarray
+  - cfgrib
+  - eccodes
+  - requests
+  - beautifulsoup4
+  - rasterio
+  - geopandas
+  - shapely
+  - pyproj
+  - netcdf4
+  - pip
