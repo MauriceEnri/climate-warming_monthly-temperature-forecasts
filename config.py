@@ -73,9 +73,7 @@ MODELS = {
     "GFS": {"grid": "regular", "oper": "GFS", "control": "C00", "ensemble": "GEFS"},
     "IFS": {"grid": "regular", "oper": "HRES", "control": None, "ensemble": "ENS_ECMWF"},
     "AIFS": {"grid": "regular", "oper": "AIFS", "control": None, "ensemble": "ENS_AIFS"},
-    "GEM": {"grid": "regular", "oper": "GEM", "control": None, "ensemble": None},
-    "ICON_EU": {"grid": "icon", "oper": "ICON_EU", "control": None, "ensemble": "ENS_ICON_EU"},  #
-    "ICON_D2": {"grid": "icon", "oper": "ICON_D2", "control": None, "ensemble": None},
+    "ICON_EU": {"grid": "icon", "oper": "ICON_EU", "control": None, "ensemble": "ENS_ICON_EU"}, 
 }
 ENSEMBLE_MEMBERS = {
     "GEFS": [
