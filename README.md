@@ -1,117 +1,153 @@
 # Germany 2 m Temperature Forecasts
 
-Python workflow for producing gridded 2 m air-temperature forecasts over Germany from several numerical weather prediction models. The workflow downloads/reads forecast data, maps it to a common Germany grid, applies elevation/lapse-rate corrections where configured, calculates daily and running means, and creates plots for the current and following month.
+This project automates the production of gridded 2 m air-temperature forecasts over Germany. It downloads available forecast data, prepares the model fields, applies the configured grid/elevation and lapse-rate processing, calculates daily and running means, creates plots for the **current and following month when data are available**, and can publish the results to GitHub.
 
-## Forecast models
+The main entry point is `run_forecast.sh`. It is designed to run the full pipeline for the **00Z** or **12Z** forecast cycle and is suitable for scheduled execution with `cron`.
 
-The project has been used with:
+## Forecast models and data sources
 
-- GFS
-- IFS
-- AIFS
-- ICON-EPS
+The links below point to the providers' model data or documentation. The models actually downloaded during a run depend on the downloader scripts and their current configuration; consult `downloaders/` and `config.py` for the exact implementation and paths.
 
-Model availability depends on the downloader configuration and the forecast run being processed.
+| Model | Provider | Data / documentation |
+|---|---|---|
+| GFS — Global Forecast System | NOAA / NCEP | [GFS data and access options](https://www.ncei.noaa.gov/products/weather-climate-models/global-forecast) · [NOAA GFS products](https://vlab.noaa.gov/web/gfs/products) |
+| IFS — Integrated Forecasting System | ECMWF | [ECMWF Open Data](https://www.ecmwf.int/en/forecasts/datasets/open-data) · [Open Data technical documentation](https://confluence.ecmwf.int/pages/viewpage.action?pageId=394991621) |
+| AIFS — Artificial Intelligence Forecasting System | ECMWF | [AIFS data](https://www.ecmwf.int/en/forecasts/datasets/aifs-machine-learning-data) · [ECMWF Open Data](https://www.ecmwf.int/en/forecasts/datasets/open-data) |
+| ICON-EU | Deutscher Wetterdienst (DWD) | [DWD NWP Open Data directory](https://opendata.dwd.de/weather/nwp/) · [ICON-EU data directory](https://opendata.dwd.de/weather/nwp/icon-eu/) |
 
-## Repository layout
+Forecast-provider endpoints, file layouts, and model versions can change. Use the current provider documentation if a downloader URL stops working. DWD is also updating its NWP open-data directory layout, so check the DWD index if a model URL changes.
+
+## Project structure
 
 ```text
-.
+forecast_rastered/
 ├── config.py
+├── run_forecast.sh
 ├── run_processing.py
 ├── publish2git.py
 ├── downloaders/
 ├── preprocessing/
 ├── processing/
 ├── utils/
-└── Ensembles_outputs/       # Published output folders, organised by run
+├── data/
+└── logs/
 ```
 
-The repository may also contain supporting static-grid files or other configuration assets. Keep any files required by `config.py` and the processing scripts when cloning or deploying the project.
+- **`config.py`** — central configuration for project paths, model inputs, the Germany grid, static assets, and other processing settings. Read this file before moving the project or changing its directory layout.
+- **`run_forecast.sh`** — orchestrates the end-to-end scheduled workflow.
+- **`downloaders/`** — scripts that retrieve forecast model data.
+- **`preprocessing/`** — preparation and regridding steps.
+- **`processing/`** — raster calculations, running means, and plot generation.
+- **`publish2git.py`** — publishes processed outputs to the configured Git repository.
+- **`data/`** — generated and supporting data, including subfolders containing the Germany grid and other assets required by the workflow. The exact files and paths are documented in `config.py`. Avoid deleting or moving these files without updating the configuration.
+- **`logs/`** — run-specific log directories. Each run stores logs from the individual downloader scripts and the DWD update process in its own subfolder.
 
-## Requirements
+Published plots are stored in the repository's `Ensembles_outputs/` directory, organised by forecast run (for example, `Ensembles_outputs/YYYYMMDD_00Z/`). The exact output paths are controlled by the configuration and publishing script.
 
-- Linux, macOS, or Windows with WSL2
-- Conda or Miniconda
-- Network access to the forecast data sources
-- Git, if you want to publish generated outputs to GitHub
+## How the full pipeline works
 
-GRIB-reading dependencies may require ecCodes. The provided `environment.yml` includes `cfgrib` and `eccodes` through Conda-forge.
+`run_forecast.sh` is the recommended entry point when you want the whole workflow to run in one go. The script coordinates the steps configured in the project, including:
 
-## Set up the environment
+1. Updating the relevant DWD station/climate data used by the workflow.
+2. Downloading available forecast data with the model-specific downloader scripts.
+3. Processing the forecast fields onto the Germany grid.
+4. Calculating the configured daily and running-mean products.
+5. Creating plots for the current and following month when the required data are available.
+6. Publishing the generated run outputs to the configured GitHub repository, if publishing is enabled in the script/configuration.
 
-From the repository root:
+The script may skip products when data are unavailable or a downloader fails. Check the run-specific files under `logs/` to diagnose an incomplete run.
+
+## Run the pipeline manually
+
+Activate the Conda environment first (see below), then run from the project directory:
+
+```bash
+cd /path/to/forecast_rastered
+chmod +x run_forecast.sh   # only needed if the script is not executable
+./run_forecast.sh 00
+```
+
+For the 12Z cycle:
+
+```bash
+./run_forecast.sh 12
+```
+For the 12Z cycle, the temperature mean of the current day is build from already available observed from DWD as well as the forecast time stamps covering the remainder of the current day. For this purpose, a separate script `run_dwd_12Z.sh` is run just after 12 UTC to grab the temperature mean from the first half of the day, before the second half is made up of the forecast data starting at 12Z.
+
+The argument selects the forecast initialisation cycle. Check the shell script itself if you need to confirm the supported arguments or change its behaviour.
+
+You can also run the processing step separately when the required inputs have already been downloaded:
+
+```bash
+python run_processing.py --date YYYY-MM-DD --run 00
+```
+
+Use `python run_processing.py --help` to check the options supported by the current version. Running `run_processing.py` alone does not necessarily perform the DWD update, downloads, or GitHub publishing; use `run_forecast.sh` for the complete pipeline.
+
+## Schedule automatic runs with cron
+
+The pipeline can be run automatically using `cron`. The existing schedule used for this project is:
+
+- **08:15 local machine time** — run the 00Z forecast cycle at GMT time zone.
+- **20:15 local machine time** — run the 12Z forecast cycle at GMT time zone.
+
+Edit the crontab:
+
+```bash
+crontab -e
+```
+
+Add entries like the following, replacing the project path if necessary:
+
+```cron
+15 8 * * * cd /path/to/forecast_rastered && ./run_forecast.sh 00 >> cron.log 2>&1
+15 20 * * * cd /path/to/forecast_rastered && ./run_forecast.sh 12 >> cron.log 2>&1
+15 13 * * * cd /path/to/folder/above/forecast_rastered/run_dwd_12Z.sh >> /path/to/forecast_rastered/logs/dwd_13Z.log 2>&1
+```
+The third entry executes the dwd update at midday to provide the observed data for building the tampertaure mean for the current day out of observed and forecast data for the evening 12Z cycle. Times are GMT.
+Save and exit the editor. Check the installed schedule with:
+
+```bash
+crontab -l
+```
+
+### Cron notes
+
+- The times above are interpreted in the timezone used by the machine running `cron`, not necessarily UTC. The `00` and `12` arguments select the model run cycles; they do not set the cron clock.
+- Make sure the WSL/Linux environment is running at the scheduled times. On Windows, scheduled WSL tasks may need additional setup so the environment is awake and `cron` is running.
+- Cron jobs have a limited environment. Use absolute paths, and make sure `run_forecast.sh` activates the intended Conda environment itself or otherwise uses the correct Python executable. If Conda activation is required, configure it inside the shell script rather than relying on an interactive terminal setup.
+- `cron.log` captures output from the wrapper invocation. Detailed per-downloader and DWD-update logs should be written under the run-specific subfolders in `logs/`.
+- Avoid scheduling overlapping runs. Check `cron.log` and `logs/` if a run appears to hang or is still running when the next cycle starts.
+- If publishing to GitHub is enabled, the machine needs valid Git remote configuration and authentication that works non-interactively. Never place tokens or passwords directly in this README or in the scripts.
+
+## Conda environment
+
+Create the environment from the supplied file:
 
 ```bash
 conda env create -f environment.yml
 conda activate germany-forecast
 ```
 
-If you already have an environment with the project's dependencies, you can keep using it. To update an existing environment from this file:
+To update an existing environment from the file:
 
 ```bash
 conda env update -f environment.yml --prune
 ```
 
-The environment file is a portable starting point. If the code imports additional packages or relies on system tools not listed here, add those requirements before recreating the environment on another machine.
+`environment.yml` is a starting dependency specification. Verify it against the imports and system requirements of the current code before using it to reproduce a production run on another machine. GRIB processing uses `cfgrib` and `eccodes`.
 
-## Run processing
+## Data, outputs, and Git
 
-Run processing for a forecast initialisation date. The date is passed as `YYYY-MM-DD` or `YYYYMMDD`; the run is `00` or `12` UTC and defaults to `00` if omitted.
+The pipeline creates or updates `data/` and `logs/` during normal operation. Some files under `data/` may be static assets essential to the Germany grid; others may be downloaded or generated during processing. Refer to `config.py` to distinguish them before deciding what to track in Git.
 
-```bash
-python run_processing.py --date 2026-10-24 --run 00
-```
+Do not commit credentials, temporary files, logs, or large downloaded forecast caches unless there is a deliberate reason to version them. Keep essential static grid assets available at the paths expected by `config.py`.
 
-For a compact date:
+Before pushing source changes or published outputs, inspect the repository status:
 
 ```bash
-python run_processing.py --date 20261024 --run 12
+git status
+git diff --stat
 ```
 
-Check `python run_processing.py --help` for the options supported by the current version of the script.
-
-Processing expects the forecast input files and static grid/configuration assets to be available at the paths defined in `config.py`. It writes a run-specific output directory, typically named like `YYYYMMDD_HHZ`, and produces the configured plots and data products there.
-
-### Downloading forecast inputs
-
-Downloaders live in `downloaders/`. The project has also been run using a shell wrapper such as `run_forecast.sh` to download model data before calling `run_processing.py`. Inspect the wrapper and downloader command-line help for the exact sequence and options in your checkout. Processing will not be able to create a complete set of plots if required input files have not downloaded successfully.
-
-## Publish outputs to GitHub
-
-`publish2git.py` publishes a processed run to the `Ensembles_outputs/` directory in the configured Git repository. First check the script's configuration and command-line help:
-
-```bash
-python publish2git.py --help
-```
-
-If the script is configured to publish a specific date and run, use the options shown by `--help`, for example:
-
-```bash
-python publish2git.py --date 2026-10-24 --run 00
-```
-
-Publishing is separate from processing unless your local version explicitly calls the publishing script automatically. Review the target repository and staged changes before pushing. The publisher has been designed to avoid overwriting an existing run directory; do not remove that safeguard unless you deliberately want different behaviour.
-
-## Configuration and static data
-
-- `config.py` defines project paths and processing settings.
-- `downloaders/` contains model-specific input retrieval code.
-- `preprocessing/` contains preparation/regridding steps.
-- `processing/` contains the forecast calculations and output generation.
-- `utils/` contains shared helper functions.
-- `Ensembles_outputs/` stores published runs.
-
-Some static assets (for example, a precomputed Germany grid/DEM file and metadata) may be required but can be too large or project-specific to include automatically. Confirm that all paths referenced by `config.py` exist before running the pipeline. Do not commit downloaded forecast caches, temporary GRIB index files, logs, credentials, or large generated files unless they are intentionally part of the project.
-
-## Typical workflow
-
-1. Download the required model data using the project's downloader scripts or shell wrapper.
-2. Run `run_processing.py` for the chosen date and UTC run.
-3. Inspect the generated plots and data products.
-4. Publish the run with `publish2git.py` if desired.
-5. Check the Git diff/status and push the intended changes to GitHub.
-
-## Reproducibility notes
-
-Forecast-provider endpoints, model availability, and upstream data formats can change. Keep the code, environment file, and configuration in sync, and record any additional external requirements needed to reproduce a run.
+Check the publisher's behaviour before running it against a repository that already contains a run directory. Existing published runs should not be overwritten unintentionally.
